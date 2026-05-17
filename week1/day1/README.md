@@ -26,6 +26,12 @@
 
 模型调用也走流式接口，收到一段内容就马上输出一段内容。工具执行也是 async 的，像项目搜索这种可能耗时的操作会放到线程里跑，避免卡住事件循环。
 
+## 终端状态展示
+
+工具执行时不会再把大段文件内容直接刷到 terminal 里，而是显示工具调用、工具开始、工具完成和状态流转。只读工具可以并发执行，所以可以看到多个 `read_project_file` 同时进入 `(parallel)` 状态。
+
+![Day 1 terminal tool status](assets/day1-tool-status.svg)
+
 ## 主 Agent 和 Subagent
 
 现在有两个 agent 角色：
