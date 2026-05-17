@@ -72,6 +72,17 @@ class ToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("grep_project", tools)
         self.assertIn("read_project_file", tools)
 
+    async def test_tool_metadata_marks_parallel_safety(self):
+        from agent.tools.registry import get_tool_registry
+
+        tools = get_tool_registry()
+
+        self.assertEqual(tools["read_file"]["category"], "文件")
+        self.assertTrue(tools["read_file"]["parallel_safe"])
+        self.assertFalse(tools["write_file"]["parallel_safe"])
+        self.assertEqual(tools["grep_project"]["category"], "搜索")
+        self.assertTrue(tools["grep_project"]["parallel_safe"])
+
 
 if __name__ == "__main__":
     unittest.main()

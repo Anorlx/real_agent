@@ -1,4 +1,6 @@
 import unittest
+import asyncio
+import time
 
 
 class AgentLoopTests(unittest.IsolatedAsyncioTestCase):
@@ -120,6 +122,106 @@ class AgentLoopTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(selected, ["calculator"])
+
+    async def test_parallel_safe_tools_run_concurrently(self):
+        from agent.agent_loop import run_agent
+
+        async def slow_tool(arguments):
+            await asyncio.sleep(0.05)
+            return {"ok": True, "content": arguments["value"]}
+
+        tools = {
+            "tool_a": {
+                "spec": {"name": "tool_a", "description": "", "parameters": {"type": "object"}},
+                "run": slow_tool,
+                "category": "搜索",
+                "parallel_safe": True,
+            },
+            "tool_b": {
+                "spec": {"name": "tool_b", "description": "", "parameters": {"type": "object"}},
+                "run": slow_tool,
+                "category": "搜索",
+                "parallel_safe": True,
+            },
+        }
+        calls = 0
+
+        async def fake_model(messages, system_prompt, tools, model_name):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                yield {"type": "tool_call", "tool_call": {"id": "a", "name": "tool_a", "arguments": {"value": "A"}}}
+                yield {"type": "tool_call", "tool_call": {"id": "b", "name": "tool_b", "arguments": {"value": "B"}}}
+            else:
+                yield {"type": "assistant_delta", "content": "done"}
+
+        async def fake_selector(user_input, messages, available_tools, model_name):
+            return ["tool_a", "tool_b"]
+
+        started = time.perf_counter()
+        events = [
+            event
+            async for event in run_agent(
+                user_input="parallel",
+                history=[],
+                model_call=fake_model,
+                tool_selector=fake_selector,
+                tools=tools,
+                max_turns=3,
+            )
+        ]
+        elapsed = time.perf_counter() - started
+
+        self.assertLess(elapsed, 0.09)
+        self.assertEqual(
+            [event["message"]["name"] for event in events if event["type"] == "tool_result"],
+            ["tool_a", "tool_b"],
+        )
+
+    async def test_unsafe_tools_run_sequentially(self):
+        from agent.agent_loop import run_agent
+
+        timeline = []
+
+        async def slow_write(arguments):
+            timeline.append(("start", arguments["value"], time.perf_counter()))
+            await asyncio.sleep(0.02)
+            timeline.append(("end", arguments["value"], time.perf_counter()))
+            return {"ok": True, "content": arguments["value"]}
+
+        tools = {
+            "write_a": {
+                "spec": {"name": "write_a", "description": "", "parameters": {"type": "object"}},
+                "run": slow_write,
+                "category": "文件",
+                "parallel_safe": False,
+            }
+        }
+        calls = 0
+
+        async def fake_model(messages, system_prompt, tools, model_name):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                yield {"type": "tool_call", "tool_call": {"id": "a", "name": "write_a", "arguments": {"value": "A"}}}
+                yield {"type": "tool_call", "tool_call": {"id": "b", "name": "write_a", "arguments": {"value": "B"}}}
+            else:
+                yield {"type": "assistant_delta", "content": "done"}
+
+        async def fake_selector(user_input, messages, available_tools, model_name):
+            return ["write_a"]
+
+        async for _ in run_agent(
+            user_input="sequential",
+            history=[],
+            model_call=fake_model,
+            tool_selector=fake_selector,
+            tools=tools,
+            max_turns=3,
+        ):
+            pass
+
+        self.assertEqual([item[:2] for item in timeline], [("start", "A"), ("end", "A"), ("start", "B"), ("end", "B")])
 
 
 if __name__ == "__main__":

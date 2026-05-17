@@ -83,6 +83,53 @@ async def _run_tool_call(
     }
 
 
+def _tool_name(tool_call: dict[str, Any]) -> str | None:
+    return tool_call.get("name") or tool_call.get("function", {}).get("name")
+
+
+def _is_parallel_safe(tool_call: dict[str, Any], tools: dict[str, dict[str, Any]]) -> bool:
+    name = _tool_name(tool_call)
+    return bool(name in tools and tools[name].get("parallel_safe", False))
+
+
+def _tool_batches(
+    tool_calls: list[dict[str, Any]],
+    tools: dict[str, dict[str, Any]],
+) -> list[tuple[bool, list[dict[str, Any]]]]:
+    batches: list[tuple[bool, list[dict[str, Any]]]] = []
+    current_parallel: list[dict[str, Any]] = []
+
+    for tool_call in tool_calls:
+        if _is_parallel_safe(tool_call, tools):
+            current_parallel.append(tool_call)
+            continue
+
+        if current_parallel:
+            batches.append((True, current_parallel))
+            current_parallel = []
+        batches.append((False, [tool_call]))
+
+    if current_parallel:
+        batches.append((True, current_parallel))
+    return batches
+
+
+async def _run_tool_calls(
+    tool_calls: list[dict[str, Any]],
+    tools: dict[str, dict[str, Any]],
+) -> AsyncGenerator[dict[str, Any], None]:
+    for is_parallel, batch in _tool_batches(tool_calls, tools):
+        if is_parallel and len(batch) > 1:
+            results = await asyncio.gather(
+                *[_run_tool_call(tool_call, tools) for tool_call in batch]
+            )
+            for result in results:
+                yield result
+        else:
+            for tool_call in batch:
+                yield await _run_tool_call(tool_call, tools)
+
+
 async def run_agent(
     user_input: str,
     history: list[dict[str, Any]] | None,
@@ -161,8 +208,7 @@ async def run_agent(
             yield state_event(state, "工具执行", tool_calls=tool_calls)
             tool_messages: list[dict[str, Any]] = []
             try:
-                for tool_call in tool_calls:
-                    tool_message = await _run_tool_call(tool_call, registry)
+                async for tool_message in _run_tool_calls(tool_calls, registry):
                     tool_messages.append(tool_message)
                     yield {"type": "tool_result", "message": tool_message}
             except KeyboardInterrupt:
@@ -179,4 +225,3 @@ async def run_agent(
             await asyncio.sleep(0)
     except UnicodeError as exc:
         yield terminal_event(state, "image_error", f"{TERMINATION_MESSAGES['image_error']} {exc}")
-

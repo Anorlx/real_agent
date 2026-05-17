@@ -46,17 +46,62 @@ def get_tool_registry(workspace_root: Path | None = None) -> dict[str, dict[str,
     root.mkdir(parents=True, exist_ok=True)
     project_root = PROJECT_ROOT.resolve()
     return {
-        "read_file": {"spec": read_file_spec(), "run": _with_workspace(read_file, root)},
-        "write_file": {"spec": write_file_spec(), "run": _with_workspace(write_file, root)},
-        "list_dir": {"spec": list_dir_spec(), "run": _with_workspace(list_dir, root)},
-        "ls_project": {"spec": ls_project_spec(), "run": _with_project(ls_project, project_root)},
-        "grep_project": {"spec": grep_project_spec(), "run": _with_project(grep_project, project_root)},
+        "read_file": {
+            "spec": read_file_spec(),
+            "run": _with_workspace(read_file, root),
+            "category": "文件",
+            "responsibility": "读取 agent_write 工作区内的文本文件",
+            "parallel_safe": True,
+        },
+        "write_file": {
+            "spec": write_file_spec(),
+            "run": _with_workspace(write_file, root),
+            "category": "文件",
+            "responsibility": "写入 agent_write 工作区内的文本文件",
+            "parallel_safe": False,
+        },
+        "list_dir": {
+            "spec": list_dir_spec(),
+            "run": _with_workspace(list_dir, root),
+            "category": "文件",
+            "responsibility": "列出 agent_write 工作区目录",
+            "parallel_safe": True,
+        },
+        "ls_project": {
+            "spec": ls_project_spec(),
+            "run": _with_project(ls_project, project_root),
+            "category": "搜索",
+            "responsibility": "列出当前项目目录结构",
+            "parallel_safe": True,
+        },
+        "grep_project": {
+            "spec": grep_project_spec(),
+            "run": _with_project(grep_project, project_root),
+            "category": "搜索",
+            "responsibility": "在当前项目内搜索文本",
+            "parallel_safe": True,
+        },
         "read_project_file": {
             "spec": read_project_file_spec(),
             "run": _with_project(read_project_file, project_root),
+            "category": "文件",
+            "responsibility": "读取当前项目内的文本文件",
+            "parallel_safe": True,
         },
-        "calculator": {"spec": calculator_spec(), "run": calculator},
-        "current_time": {"spec": current_time_spec(), "run": current_time},
+        "calculator": {
+            "spec": calculator_spec(),
+            "run": calculator,
+            "category": "执行",
+            "responsibility": "安全计算四则运算表达式",
+            "parallel_safe": True,
+        },
+        "current_time": {
+            "spec": current_time_spec(),
+            "run": current_time,
+            "category": "执行",
+            "responsibility": "获取指定时区当前时间",
+            "parallel_safe": True,
+        },
     }
 
 
