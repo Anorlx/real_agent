@@ -12,19 +12,59 @@ from agent.subagents.tool_search_subagent import select_tools
 from agent.tools.registry import get_tool_registry
 
 
+def _parse_arguments(arguments: Any) -> dict[str, Any]:
+    if isinstance(arguments, dict):
+        return arguments
+    if isinstance(arguments, str):
+        try:
+            import json
+
+            parsed = json.loads(arguments or "{}")
+        except Exception:
+            return {"raw": arguments}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _tool_summary(name: str | None, arguments: dict[str, Any]) -> str:
+    parts = []
+    for key in ("path", "pattern", "expression", "timezone"):
+        if key in arguments:
+            parts.append(f"{key}={arguments[key]}")
+    if "content" in arguments:
+        parts.append(f"content={len(str(arguments['content']))} chars")
+    return ", ".join(parts) or "no args"
+
+
 def _print_event(event: dict[str, Any]) -> None:
     event_type = event["type"]
     if event_type == "state":
         state = event["state"]
-        print(f"\n[state] turn={state['turn']} phase={event['phase']}")
+        details = []
+        if event.get("selected_tools"):
+            details.append("tools=" + ",".join(event["selected_tools"]))
+        if event.get("tool_calls"):
+            details.append("calls=" + ",".join(call.get("name", "?") for call in event["tool_calls"]))
+        if event.get("tool_results"):
+            summaries = [
+                result.get("summary") or result.get("name", "?")
+                for result in event["tool_results"]
+            ]
+            details.append("reviewed=" + "; ".join(summary for summary in summaries if summary))
+        suffix = f" {' | '.join(details)}" if details else ""
+        print(f"\n[state] turn={state['turn']} phase={event['phase']}{suffix}")
     elif event_type == "assistant_delta":
         print(event["content"], end="", flush=True)
     elif event_type == "tool_call":
         tool_call = event["tool_call"]
-        print(f"\n[tool_call] {tool_call.get('name')} {tool_call.get('arguments')}")
+        arguments = _parse_arguments(tool_call.get("arguments"))
+        print(f"\n[tool_call] {tool_call.get('name')} {_tool_summary(tool_call.get('name'), arguments)}")
+    elif event_type == "tool_start":
+        mode = "parallel" if event.get("parallel") else "sequential"
+        print(f"\n[tool_start] {event.get('name')} {event.get('summary') or 'no args'} ({mode})")
     elif event_type == "tool_result":
         message = event["message"]
-        print(f"\n[tool_result] {message['name']}: {message['content']}")
+        print(f"\n[tool_done] {message['name']} {message.get('summary') or 'done'}")
     elif event_type == "terminal":
         print(f"\n[terminal] {event['reason']}: {event['message']}")
 

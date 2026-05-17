@@ -55,19 +55,35 @@ def _assistant_message(content: str, tool_calls: list[dict[str, Any]]) -> dict[s
     return message
 
 
+def _tool_arguments(tool_call: dict[str, Any]) -> dict[str, Any]:
+    name = tool_call.get("name") or tool_call.get("function", {}).get("name")
+    raw_args = tool_call.get("arguments") or tool_call.get("function", {}).get("arguments") or {}
+    if isinstance(raw_args, str):
+        try:
+            return json.loads(raw_args or "{}")
+        except json.JSONDecodeError:
+            return {"raw": raw_args}
+    return raw_args if isinstance(raw_args, dict) else {}
+
+
+def _tool_summary(name: str | None, arguments: dict[str, Any]) -> str:
+    if not arguments:
+        return ""
+    parts = []
+    for key in ("path", "pattern", "expression", "timezone"):
+        if key in arguments:
+            parts.append(f"{key}={arguments[key]}")
+    if "content" in arguments:
+        parts.append(f"content={len(str(arguments['content']))} chars")
+    return ", ".join(parts)
+
+
 async def _run_tool_call(
     tool_call: dict[str, Any],
     tools: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
     name = tool_call.get("name") or tool_call.get("function", {}).get("name")
-    raw_args = tool_call.get("arguments") or tool_call.get("function", {}).get("arguments") or {}
-    if isinstance(raw_args, str):
-        try:
-            arguments = json.loads(raw_args or "{}")
-        except json.JSONDecodeError:
-            arguments = {"raw": raw_args}
-    else:
-        arguments = raw_args
+    arguments = _tool_arguments(tool_call)
 
     if name not in tools:
         result = {"ok": False, "error": f"Unknown tool: {name}"}
@@ -78,6 +94,8 @@ async def _run_tool_call(
         "role": "tool",
         "tool_call_id": tool_call.get("id", name),
         "name": name,
+        "arguments": arguments,
+        "summary": _tool_summary(name, arguments),
         "content": _tool_result_content(result),
         "raw_result": result,
     }
@@ -119,15 +137,26 @@ async def _run_tool_calls(
     tools: dict[str, dict[str, Any]],
 ) -> AsyncGenerator[dict[str, Any], None]:
     for is_parallel, batch in _tool_batches(tool_calls, tools):
+        for tool_call in batch:
+            name = _tool_name(tool_call)
+            arguments = _tool_arguments(tool_call)
+            yield {
+                "type": "tool_start",
+                "name": name,
+                "arguments": arguments,
+                "summary": _tool_summary(name, arguments),
+                "parallel": is_parallel and len(batch) > 1,
+            }
         if is_parallel and len(batch) > 1:
             results = await asyncio.gather(
                 *[_run_tool_call(tool_call, tools) for tool_call in batch]
             )
             for result in results:
-                yield result
+                yield {"type": "tool_result", "message": result}
         else:
             for tool_call in batch:
-                yield await _run_tool_call(tool_call, tools)
+                result = await _run_tool_call(tool_call, tools)
+                yield {"type": "tool_result", "message": result}
 
 
 async def run_agent(
@@ -208,9 +237,10 @@ async def run_agent(
             yield state_event(state, "工具执行", tool_calls=tool_calls)
             tool_messages: list[dict[str, Any]] = []
             try:
-                async for tool_message in _run_tool_calls(tool_calls, registry):
-                    tool_messages.append(tool_message)
-                    yield {"type": "tool_result", "message": tool_message}
+                async for tool_event in _run_tool_calls(tool_calls, registry):
+                    if tool_event["type"] == "tool_result":
+                        tool_messages.append(tool_event["message"])
+                    yield tool_event
             except KeyboardInterrupt:
                 yield terminal_event(state, "aborted_tools", TERMINATION_MESSAGES["aborted_tools"])
                 return
