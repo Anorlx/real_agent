@@ -1,0 +1,182 @@
+from __future__ import annotations
+
+import asyncio
+import json
+from typing import Any, AsyncGenerator, Awaitable, Callable
+
+from agent.state import new_state, state_event, terminal_event
+from agent.subagents.tool_search_subagent import select_tools
+from agent.tools.registry import dashscope_tool_specs, get_tool_registry
+
+SYSTEM_PROMPT = """你是一个从零开始逐步扩展的 Python Agent。
+你可以正常对话，也可以在需要时调用工具。
+工具读写的工作区是 agent_write；工具结果会在下一轮回填给你。
+拿到工具结果后，请继续判断是再调用工具，还是给用户最终回复。
+"""
+
+TERMINATION_MESSAGES = {
+    "completed": "模型正常回复且无工具调用。",
+    "aborted_streaming": "用户在流式输出期间中断。",
+    "aborted_tools": "用户在工具执行期间中断。",
+    "max_turns": "达到最大循环次数。",
+    "blocking_limit": "Token 数超过硬性限制。",
+    "prompt_too_long": "上下文过长且恢复失败。",
+    "model_error": "模型 API 调用异常。",
+    "stop_hook_prevented": "Stop hook 阻止继续。",
+    "hook_stopped": "工具 hook 阻止继续。",
+    "image_error": "图片尺寸或格式错误。",
+}
+
+
+ModelCall = Callable[..., AsyncGenerator[dict[str, Any], None]]
+ToolSelector = Callable[
+    [str, list[dict[str, Any]], dict[str, dict[str, Any]], str],
+    Awaitable[list[str]],
+]
+
+
+def _message_token_estimate(messages: list[dict[str, Any]]) -> int:
+    text = json.dumps(messages, ensure_ascii=False)
+    return max(1, len(text) // 4)
+
+
+def _tool_result_content(result: dict[str, Any]) -> str:
+    if result.get("ok") and "content" in result:
+        return str(result["content"])
+    if result.get("ok"):
+        return json.dumps(result, ensure_ascii=False)
+    return f"ERROR: {result.get('error', 'tool failed')}"
+
+
+def _assistant_message(content: str, tool_calls: list[dict[str, Any]]) -> dict[str, Any]:
+    message: dict[str, Any] = {"role": "assistant", "content": content}
+    if tool_calls:
+        message["tool_calls"] = tool_calls
+    return message
+
+
+async def _run_tool_call(
+    tool_call: dict[str, Any],
+    tools: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    name = tool_call.get("name") or tool_call.get("function", {}).get("name")
+    raw_args = tool_call.get("arguments") or tool_call.get("function", {}).get("arguments") or {}
+    if isinstance(raw_args, str):
+        try:
+            arguments = json.loads(raw_args or "{}")
+        except json.JSONDecodeError:
+            arguments = {"raw": raw_args}
+    else:
+        arguments = raw_args
+
+    if name not in tools:
+        result = {"ok": False, "error": f"Unknown tool: {name}"}
+    else:
+        result = await tools[name]["run"](arguments)
+
+    return {
+        "role": "tool",
+        "tool_call_id": tool_call.get("id", name),
+        "name": name,
+        "content": _tool_result_content(result),
+        "raw_result": result,
+    }
+
+
+async def run_agent(
+    user_input: str,
+    history: list[dict[str, Any]] | None,
+    model_call: ModelCall,
+    tool_selector: ToolSelector | None,
+    tools: dict[str, dict[str, Any]] | None = None,
+    max_turns: int = 10,
+    blocking_token_limit: int = 120_000,
+    stop_hook: Callable[[dict[str, Any]], bool] | None = None,
+    main_model_name: str = "glm-5",
+    subagent_model_name: str = "qwen3.5-flash",
+) -> AsyncGenerator[dict[str, Any], None]:
+    state = new_state(user_input, history)
+    registry = tools or get_tool_registry()
+    yield state_event(state, "初始化")
+
+    try:
+        while True:
+            if state["turn"] >= max_turns:
+                yield terminal_event(state, "max_turns", TERMINATION_MESSAGES["max_turns"])
+                return
+
+            if _message_token_estimate(state["messages"]) > blocking_token_limit:
+                yield terminal_event(state, "blocking_limit", TERMINATION_MESSAGES["blocking_limit"])
+                return
+
+            state["turn"] += 1
+            yield state_event(state, "预处理")
+
+            selector = tool_selector
+            if selector is None:
+                selected = await select_tools(user_input, state["messages"], registry)
+            else:
+                selected = await selector(user_input, state["messages"], registry, subagent_model_name)
+            state["selected_tools"] = selected
+            tool_specs = dashscope_tool_specs(selected, registry)
+
+            yield state_event(state, "API调用", selected_tools=selected)
+
+            assistant_text = ""
+            tool_calls: list[dict[str, Any]] = []
+            try:
+                async for event in model_call(
+                    messages=state["messages"],
+                    system_prompt=SYSTEM_PROMPT,
+                    tools=tool_specs,
+                    model_name=main_model_name,
+                ):
+                    if event.get("type") == "assistant_delta":
+                        assistant_text += event.get("content", "")
+                        yield event
+                    elif event.get("type") == "tool_call":
+                        tool_calls.append(event["tool_call"])
+                        yield event
+            except KeyboardInterrupt:
+                yield terminal_event(state, "aborted_streaming", TERMINATION_MESSAGES["aborted_streaming"])
+                return
+            except Exception as exc:
+                yield terminal_event(state, "model_error", f"{TERMINATION_MESSAGES['model_error']} {exc}")
+                return
+
+            state["messages"].append(_assistant_message(assistant_text, tool_calls))
+
+            if not tool_calls:
+                yield state_event(state, "终止检查")
+                if stop_hook and stop_hook(state):
+                    yield terminal_event(
+                        state,
+                        "stop_hook_prevented",
+                        TERMINATION_MESSAGES["stop_hook_prevented"],
+                    )
+                    return
+                yield terminal_event(state, "completed", TERMINATION_MESSAGES["completed"])
+                return
+
+            yield state_event(state, "工具执行", tool_calls=tool_calls)
+            tool_messages: list[dict[str, Any]] = []
+            try:
+                for tool_call in tool_calls:
+                    tool_message = await _run_tool_call(tool_call, registry)
+                    tool_messages.append(tool_message)
+                    yield {"type": "tool_result", "message": tool_message}
+            except KeyboardInterrupt:
+                yield terminal_event(state, "aborted_tools", TERMINATION_MESSAGES["aborted_tools"])
+                return
+
+            state["messages"].extend(tool_messages)
+            yield state_event(state, "结果回填", tool_results=tool_messages)
+
+            if stop_hook and stop_hook(state):
+                yield terminal_event(state, "hook_stopped", TERMINATION_MESSAGES["hook_stopped"])
+                return
+
+            await asyncio.sleep(0)
+    except UnicodeError as exc:
+        yield terminal_event(state, "image_error", f"{TERMINATION_MESSAGES['image_error']} {exc}")
+
