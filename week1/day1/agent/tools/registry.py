@@ -6,6 +6,8 @@ from typing import Any, Awaitable, Callable
 from agent.config import DEFAULT_TOOL_WORKSPACE, PROJECT_ROOT
 from agent.tools.calculator import calculator, calculator_spec
 from agent.tools.filesystem import (
+    delete_file,
+    delete_file_spec,
     list_dir,
     list_dir_spec,
     read_file,
@@ -42,7 +44,7 @@ def _with_project(func: Callable[..., Awaitable[dict[str, Any]]], root: Path) ->
 
 
 def get_tool_registry(workspace_root: Path | None = None) -> dict[str, dict[str, Any]]:
-    root = (workspace_root or DEFAULT_TOOL_WORKSPACE).resolve()
+    root = (workspace_root or PROJECT_ROOT).resolve()
     root.mkdir(parents=True, exist_ok=True)
     project_root = PROJECT_ROOT.resolve()
     return {
@@ -50,21 +52,28 @@ def get_tool_registry(workspace_root: Path | None = None) -> dict[str, dict[str,
             "spec": read_file_spec(),
             "run": _with_workspace(read_file, root),
             "category": "文件",
-            "responsibility": "读取 agent_write 工作区内的文本文件",
+            "responsibility": "读取当前项目内的文本文件",
             "parallel_safe": True,
         },
         "write_file": {
             "spec": write_file_spec(),
             "run": _with_workspace(write_file, root),
             "category": "文件",
-            "responsibility": "写入 agent_write 工作区内的文本文件",
+            "responsibility": "写入当前项目内的文本文件",
+            "parallel_safe": False,
+        },
+        "delete_file": {
+            "spec": delete_file_spec(),
+            "run": _with_workspace(delete_file, root),
+            "category": "文件",
+            "responsibility": "删除当前项目内的文件",
             "parallel_safe": False,
         },
         "list_dir": {
             "spec": list_dir_spec(),
             "run": _with_workspace(list_dir, root),
             "category": "文件",
-            "responsibility": "列出 agent_write 工作区目录",
+            "responsibility": "列出当前项目内目录",
             "parallel_safe": True,
         },
         "ls_project": {

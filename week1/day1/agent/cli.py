@@ -5,7 +5,7 @@ import asyncio
 from typing import Any
 
 from agent.agent_loop import run_agent
-from agent.config import DEFAULT_TOOL_WORKSPACE
+from agent.config import PROJECT_ROOT
 from agent.input import create_terminal_input, patch_stdout_context
 from agent.models.main_agent import dashscope_stream_chat
 from agent.subagents.tool_search_subagent import select_tools
@@ -86,10 +86,10 @@ async def _selector(
 
 async def chat_loop(max_turns: int) -> None:
     history: list[dict[str, Any]] = []
-    tools = get_tool_registry(DEFAULT_TOOL_WORKSPACE)
+    tools = get_tool_registry()
     reader = create_terminal_input()
     print("agent started. 输入 exit/quit 结束。")
-    print(f"tool workspace: {DEFAULT_TOOL_WORKSPACE}")
+    print(f"tool root: {PROJECT_ROOT}")
     print(f"input mode: {reader.name}")
     while True:
         try:

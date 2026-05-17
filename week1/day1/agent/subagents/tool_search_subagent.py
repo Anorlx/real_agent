@@ -21,6 +21,8 @@ def _keyword_fallback(user_input: str, available_names: list[str]) -> list[str]:
         selected.extend(["read_file", "list_dir", "read_project_file", "ls_project"])
     if any(word in text for word in ["写", "保存", "创建", "write"]):
         selected.append("write_file")
+    if any(word in text for word in ["删除", "删掉", "移除", "delete", "remove", "rm"]):
+        selected.append("delete_file")
     if any(word in text for word in ["列出", "目录", "项目", "结构", "ls", "list"]):
         selected.extend(["list_dir", "ls_project"])
     if any(word in text for word in ["搜索", "查找", "grep", "rg", "find"]):
