@@ -12,26 +12,6 @@ TOOL_SEARCH_SYSTEM_PROMPT = """你是 tool_search_subagent。
 """
 
 
-def _keyword_fallback(user_input: str, available_names: list[str]) -> list[str]:
-    text = user_input.lower()
-    selected: list[str] = []
-    if any(word in text for word in ["算", "计算", "+", "-", "*", "/", "平方", "math"]):
-        selected.append("calculator")
-    if any(word in text for word in ["读", "看", "打开", "文件", "read"]):
-        selected.extend(["read_file", "list_dir", "read_project_file", "ls_project"])
-    if any(word in text for word in ["写", "保存", "创建", "write"]):
-        selected.append("write_file")
-    if any(word in text for word in ["删除", "删掉", "移除", "delete", "remove", "rm"]):
-        selected.append("delete_file")
-    if any(word in text for word in ["列出", "目录", "项目", "结构", "ls", "list"]):
-        selected.extend(["list_dir", "ls_project"])
-    if any(word in text for word in ["搜索", "查找", "grep", "rg", "find"]):
-        selected.append("grep_project")
-    if any(word in text for word in ["时间", "几点", "time"]):
-        selected.append("current_time")
-    if any(word in text for word in ["运行", "执行", "跑代码", "跑测试", "命令", "terminal", "python", "pytest", "unittest"]):
-        selected.append("run_command")
-    return [name for name in dict.fromkeys(selected) if name in available_names]
 
 
 def _extract_json(text: str) -> dict[str, Any]:
@@ -54,8 +34,6 @@ async def select_tools(
     model_name: str = "qwen3.5-flash",
 ) -> list[str]:
     names = list(available_tools)
-    if model_call is None:
-        return _keyword_fallback(user_input, names)
 
     prompt = {
         "role": "user",
@@ -79,7 +57,7 @@ async def select_tools(
             if event.get("type") == "assistant_delta":
                 content += event.get("content", "")
     except Exception:
-        return _keyword_fallback(user_input, names)
+        return "没有工具可以选"
 
     parsed = _extract_json(content)
     selected = parsed.get("tools", [])
