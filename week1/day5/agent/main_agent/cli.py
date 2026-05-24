@@ -248,8 +248,8 @@ async def _drain_tasks(tasks: set[asyncio.Task[Any]]) -> None:
     tasks.clear()
 
 
-async def chat_loop(max_turns: int) -> None:
-    ui = TerminalUI(color=sys.stdout.isatty())
+async def chat_loop(max_turns: int, color: bool = False) -> None:
+    ui = TerminalUI(color=color and sys.stdout.isatty())
     session_store = SessionStore()
     await session_store.setup()
     try:
@@ -342,8 +342,9 @@ async def chat_loop(max_turns: int) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the minimal async agent.")
     parser.add_argument("--max-turns", type=int, default=10)
+    parser.add_argument("--color", action="store_true", help="Enable ANSI colors in terminal output.")
     args = parser.parse_args()
     log_path = configure_agent_logging()
     logger.info("agent cli main started log_path=%s", log_path)
     with patch_stdout_context()():
-        asyncio.run(chat_loop(args.max_turns))
+        asyncio.run(chat_loop(args.max_turns, color=args.color))
