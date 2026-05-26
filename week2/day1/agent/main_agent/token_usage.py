@@ -35,3 +35,30 @@ def build_token_snapshot(
         "remaining_tokens": max(0, blocking_token_limit - context_tokens),
         "blocking_token_limit": blocking_token_limit,
     }
+
+
+def build_real_usage_snapshot(
+    usage: dict[str, Any],
+    *,
+    blocking_token_limit: int,
+) -> dict[str, Any]:
+    prompt_tokens = usage.get("prompt_tokens")
+    completion_tokens = usage.get("completion_tokens")
+    total_tokens = usage.get("total_tokens")
+    context_tokens = prompt_tokens if isinstance(prompt_tokens, int) else total_tokens
+    remaining = (
+        max(0, blocking_token_limit - context_tokens)
+        if isinstance(context_tokens, int)
+        else None
+    )
+    return {
+        "kind": usage.get("kind", "model_usage"),
+        "model": usage.get("model", ""),
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+        "context_tokens": context_tokens,
+        "output_tokens": completion_tokens,
+        "remaining_tokens": remaining,
+        "blocking_token_limit": blocking_token_limit,
+    }

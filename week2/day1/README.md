@@ -184,7 +184,12 @@ Snip 的清理标记是：
 - `MICRO_COMPACT_IDLE_SECONDS`: MicroCompact 的时间阈值
 - `MICRO_COMPACT_KEEP_RECENT`: 微压缩保留最近几个工具结果
 
-当前 token 计算仍然是本地估算，不是模型服务端真实 tokenizer。它的目标是做工程上的趋势判断，而不是精确计费。
+Token 统计现在分两层：
+
+- 请求前：仍然使用本地估算，服务于预处理、blocking limit 和上下文压缩触发。
+- 请求后：DashScope 流式 API 会通过 `stream_options={"include_usage": true}` 返回真实 `usage`，终端显示 `prompt_tokens / completion_tokens / total_tokens`。
+
+也就是说，`preprocess` 阶段看到的是估算值；模型真正回复完成后，`token` 行会优先显示 DashScope 返回的真实用量。只有模型或兼容端点没有返回 `usage` 时，才回退到本地估算。
 
 ## 会话历史
 
@@ -446,4 +451,4 @@ conda run -n llamaindex python main.py --help
 - 更完整的 stop hook / tool hook
 - MCP 工具接入
 - 任务计划和多步骤执行
-- 用真实 tokenizer 替换现在的本地 token 估算
+- 用真实 tokenizer 改进请求前的本地预估

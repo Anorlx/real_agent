@@ -13,7 +13,7 @@ from typing_extensions import TypedDict
 from agent.main_agent.config import DEFAULT_MAIN_MODEL, DEFAULT_SUB_AGENT_MODEL
 from agent.main_agent.context_manager import ContextConfig, manage_context, snip_tool_results
 from agent.main_agent.state import new_state, state_event, terminal_event
-from agent.main_agent.token_usage import build_token_snapshot, estimate_tokens
+from agent.main_agent.token_usage import build_real_usage_snapshot, build_token_snapshot, estimate_tokens
 from agent.sub_agent.tool_runner import PermissionReviewer, run_tool_subagent
 from agent.sub_agent.tool_search import select_tools
 from agent.tools.registry import dashscope_tool_specs, get_tool_registry
@@ -231,6 +231,7 @@ async def _api_call_node(state: AgentGraphState) -> dict[str, Any]:
 
     assistant_text = ""
     tool_calls: list[dict[str, Any]] = []
+    model_usage: dict[str, Any] | None = None
     try:
         async for event in state["model_call"](
             messages=state["messages"],
@@ -244,6 +245,8 @@ async def _api_call_node(state: AgentGraphState) -> dict[str, Any]:
             elif event.get("type") == "tool_call":
                 tool_calls.append(event["tool_call"])
                 _emit(state, event)
+            elif event.get("type") == "token_usage":
+                model_usage = event.get("token_usage", {})
     except KeyboardInterrupt:
         logger.info("api_call aborted by user")
         return _terminal_update(state, "aborted_streaming", TERMINATION_MESSAGES["aborted_streaming"])
@@ -258,12 +261,19 @@ async def _api_call_node(state: AgentGraphState) -> dict[str, Any]:
         state,
         {
             "type": "token_usage",
-            "token_usage": build_token_snapshot(
-                messages=state["messages"],
-                system_prompt=_system_prompt(state),
-                tools=tool_specs,
-                blocking_token_limit=state["blocking_token_limit"],
-                output_text=assistant_text,
+            "token_usage": (
+                build_real_usage_snapshot(
+                    model_usage,
+                    blocking_token_limit=state["blocking_token_limit"],
+                )
+                if model_usage
+                else build_token_snapshot(
+                    messages=state["messages"],
+                    system_prompt=_system_prompt(state),
+                    tools=tool_specs,
+                    blocking_token_limit=state["blocking_token_limit"],
+                    output_text=assistant_text,
+                )
             ),
         },
     )

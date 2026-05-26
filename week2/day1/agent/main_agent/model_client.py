@@ -39,6 +39,22 @@ def _chunk_delta(chunk: Any) -> Any:
     return chunk.choices[0].delta
 
 
+def _usage_dict(usage: Any) -> dict[str, Any]:
+    if usage is None:
+        return {}
+    if isinstance(usage, dict):
+        data = dict(usage)
+    elif hasattr(usage, "model_dump"):
+        data = usage.model_dump()
+    else:
+        data = {
+            "prompt_tokens": getattr(usage, "prompt_tokens", None),
+            "completion_tokens": getattr(usage, "completion_tokens", None),
+            "total_tokens": getattr(usage, "total_tokens", None),
+        }
+    return {key: value for key, value in data.items() if value is not None}
+
+
 def _merge_tool_call_fragment(bucket: dict[int, dict[str, Any]], fragment: Any) -> None:
     index = int(getattr(fragment, "index", 0) or 0)
     current = bucket.setdefault(
@@ -79,6 +95,7 @@ async def dashscope_stream_chat(
         "model": model_name,
         "messages": _normalize_messages(messages, system_prompt),
         "stream": True,
+        "stream_options": {"include_usage": True},
     }
     if tools:
         kwargs["tools"] = tools
@@ -86,6 +103,13 @@ async def dashscope_stream_chat(
     tool_call_fragments: dict[int, dict[str, Any]] = {}
     stream = await client.chat.completions.create(**kwargs)
     async for chunk in stream:
+        usage = _usage_dict(getattr(chunk, "usage", None))
+        if usage:
+            usage["kind"] = "dashscope_usage"
+            usage["model"] = model_name
+            yield {"type": "token_usage", "token_usage": usage}
+            continue
+
         delta = _chunk_delta(chunk)
         if delta is None:
             continue

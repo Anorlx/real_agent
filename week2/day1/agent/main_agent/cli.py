@@ -56,6 +56,23 @@ def _tool_summary(name: str | None, arguments: dict[str, Any]) -> str:
 
 
 def _format_token_usage(token_usage: dict[str, Any]) -> str:
+    kind = token_usage.get("kind")
+    if kind and kind != "estimate":
+        prompt = token_usage.get("prompt_tokens")
+        completion = token_usage.get("completion_tokens")
+        total = token_usage.get("total_tokens")
+        remaining = token_usage.get("remaining_tokens")
+        parts = [str(kind)]
+        if prompt is not None:
+            parts.append(f"in={prompt}")
+        if completion is not None:
+            parts.append(f"out={completion}")
+        if total is not None:
+            parts.append(f"total={total}")
+        if remaining is not None:
+            parts.append(f"left≈{remaining}")
+        return " ".join(parts)
+
     context_tokens = token_usage.get("context_tokens")
     limit = token_usage.get("blocking_token_limit")
     remaining = token_usage.get("remaining_tokens")
