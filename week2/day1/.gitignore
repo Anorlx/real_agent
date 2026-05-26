@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.DS_Store
+.agent_history
+.agent_data/
+.matplotlib_cache/
+logs/
+tests/
+agent_write/*
+memory/**/*.md
