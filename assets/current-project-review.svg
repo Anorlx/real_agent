@@ -20,6 +20,7 @@
       .small { font: 520 13px -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans CJK SC", Arial, sans-serif; fill: #475569; letter-spacing: 0; }
       .tiny { font: 520 12px -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans CJK SC", Arial, sans-serif; fill: #64748b; letter-spacing: 0; }
       .mono { font: 650 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #334155; letter-spacing: 0; }
+      .center { text-anchor: middle; }
       .panel { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.4; rx: 18; filter: url(#shadow); }
       .node { stroke-width: 2; rx: 14; filter: url(#shadow); }
       .blue { fill: #dbeafe; stroke: #2563eb; }
@@ -139,20 +140,20 @@
   <rect x="44" y="888" width="1512" height="176" class="panel"/>
   <text x="72" y="926" class="section">4. 支撑层：这些模块不抢主循环，但决定 Agent 能不能长时间工作</text>
   <rect x="82" y="958" width="220" height="62" class="node rose"/>
-  <text x="116" y="984" class="label">Memory system</text>
-  <text x="116" y="1006" class="tiny">MEMORY.md / TTL / score</text>
+  <text x="192" y="984" class="label center">Memory system</text>
+  <text x="192" y="1006" class="tiny center">MEMORY.md / TTL / score</text>
   <rect x="350" y="958" width="220" height="62" class="node gray"/>
-  <text x="386" y="984" class="label">Session store</text>
-  <text x="386" y="1006" class="tiny">SQLite messages + title summary</text>
+  <text x="460" y="984" class="label center">Session store</text>
+  <text x="460" y="1006" class="tiny center">SQLite messages + summary</text>
   <rect x="618" y="958" width="220" height="62" class="node blue"/>
-  <text x="654" y="984" class="label">Context manager</text>
-  <text x="654" y="1006" class="tiny">snip / micro / collapse / auto compact</text>
+  <text x="728" y="984" class="label center">Context manager</text>
+  <text x="728" y="1006" class="tiny center">snip / micro / compact</text>
   <rect x="886" y="958" width="220" height="62" class="node green"/>
-  <text x="930" y="984" class="label">Model client</text>
-  <text x="930" y="1006" class="tiny">DashScope OpenAI-compatible stream</text>
+  <text x="996" y="984" class="label center">Model client</text>
+  <text x="996" y="1006" class="tiny center">DashScope stream API</text>
   <rect x="1154" y="958" width="314" height="62" class="node amber"/>
-  <text x="1196" y="984" class="label">Terminal observability</text>
-  <text x="1196" y="1006" class="tiny">state / tool_call / review / token / context events</text>
+  <text x="1311" y="984" class="label center">Terminal observability</text>
+  <text x="1311" y="1006" class="tiny center">state / tools / review / token / context</text>
 
   <text x="54" y="1094" class="mono">核心文件：cli.py, graph.py, context_manager.py, model_client.py, session_store.py · tool_runner.py, tool_search.py, memory_retrieval.py · registry.py · store.py</text>
 </svg>
