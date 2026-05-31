@@ -125,11 +125,22 @@ context micro_compact freed≈...
 
 这样一来，参数不合法、规则要求确认、上下文风险较高这三类情况都会走同一条路径：不静默执行，也不让主模型自己硬猜。
 
+<p align="center">
+  <img src="./assets/permission-review-screenshot.png" alt="Permission review prompt for a run_command call" width="100%">
+</p>
+
+上面这个例子里，模型想调用 `run_command` 执行联网查询，但传入的 `command` 不是工具 schema 要求的数组格式。系统在 `validateInput` 阶段把它标记为 `ask`，展示风险等级、阶段和原因，再由用户选择本次允许或拒绝。
+
 ## 🔌 MCP 接入方式
 
 项目根目录使用 `.mcp.json` 管理 MCP server，`agent/mcp/settings.json` 管理权限策略。MCP 工具会被注册成 `mcp__server__tool`，然后和普通工具一样经过 `tool_search -> function schema -> tool_runner -> permission_review -> interactivePrompt`。
 
-当前本地先接入了 `amap-maps` 高德地图 MCP。因为 `.mcp.json` 里包含 API key，它已经加入 `.gitignore`，不要上传到 GitHub。Terminal 中输入 `/@` 可以选择 MCP server；也可以直接输入 `/@amap-maps ...` 强制本轮优先使用高德 MCP。
+当前本地先接入了两个 stdio MCP：
+
+- `amap-maps`：高德地图能力，例如地址解析、路线规划、天气和地点搜索。
+- `tavily`：联网搜索能力，例如搜索、网页提取、站点地图发现和网页爬取。
+
+因为 `.mcp.json` 里包含 API key，它已经加入 `.gitignore`，不要上传到 GitHub。Terminal 中输入 `/@` 可以选择 MCP server；也可以直接输入 `/@amap-maps ...` 或 `/@tavily ...` 强制本轮优先使用指定 MCP。
 
 ## 📌 设计取向
 
